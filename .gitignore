@@ -1,0 +1,13 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.streamlit/
+data/*/
+!data/.gitkeep
+.DS_Store
+Thumbs.db
+*.log
