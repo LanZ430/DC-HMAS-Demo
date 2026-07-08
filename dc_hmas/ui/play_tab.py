@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from contextlib import contextmanager
 from typing import Any
 
 import streamlit as st
@@ -51,12 +52,27 @@ from dc_hmas.ui.themes import (
     suggest_theme_from_genre,
 )
 from dc_hmas.ui.themes.panels import render_objectives_panel, render_theme_selector, render_themed_status_panel
-from dc_hmas.ui.play_layout_css import play_viewport_css
+
+
+# Fixed-height play columns: only inner content scrolls, side panels stay on screen.
+_PLAY_PANEL_HEIGHT = 700
+
+
+@contextmanager
+def _fixed_scroll_panel(height: int):
+    """Streamlit fixed-height scroll region (requires streamlit >= 1.29)."""
+    try:
+        with st.container(height=height, border=False):
+            yield
+    except TypeError:
+        with st.container():
+            yield
 
 
 def render_play_tab(settings: Settings) -> None:
     output_lang = st.session_state.get("_output_lang", "zh")
-    st.subheader(t("play_title"))
+    if not st.session_state.get("_immersive_mode"):
+        st.subheader(t("play_title"))
 
     novels = discover_novels(settings.data_dir)
     if not novels:
@@ -309,40 +325,19 @@ def render_play_tab(settings: Settings) -> None:
             chapter_num=int(chapter),
         )
 
-    # --- Play layout: 20% | 60% | 20%, viewport-fixed side panels ---
-    layout_class = "dc-hmas-layout-three" if goal_on else "dc-hmas-layout-two"
-    st.markdown(play_viewport_css(goal_on=goal_on), unsafe_allow_html=True)
-
-    st.markdown(f'<div class="dc-hmas-play-row-marker {layout_class}"></div>', unsafe_allow_html=True)
+    # --- Play layout: 20% | 60% | 20% with fixed-height scroll panels ---
     if goal_on:
-        goal_col, main_col, status_col = st.columns([1, 3, 1])
+        goal_col, main_col, status_col = st.columns([1, 3, 1], gap="small")
     else:
         goal_col = None
-        main_col, status_col = st.columns([3, 1])
+        main_col, status_col = st.columns([3, 1], gap="small")
 
     if goal_col is not None:
         with goal_col:
-            st.markdown('<div class="dc-hmas-left-panel-marker"></div>', unsafe_allow_html=True)
-            render_objectives_panel(objectives, output_lang, theme=theme)
-
-    with status_col:
-        st.markdown('<div class="dc-hmas-right-panel-marker"></div>', unsafe_allow_html=True)
-        if theme:
-            render_themed_status_panel(
-                theme=theme,
-                char_status=st.session_state.get("_char_status"),
-                character=character,
-                output_lang=output_lang,
-                system_logs=st.session_state.get("_system_logs"),
-                goal_mode=goal_on,
-            )
-        else:
-            _render_character_status_panel(
-                paths, session_name, character, settings, int(chapter)
-            )
+            with _fixed_scroll_panel(_PLAY_PANEL_HEIGHT):
+                render_objectives_panel(objectives, output_lang, theme=theme)
 
     with main_col:
-        st.markdown('<div class="dc-hmas-main-col-marker"></div>', unsafe_allow_html=True)
         if session_enable_image:
             img_help = t("ctrl_image_session_on")
             if not settings.llm_api_key:
@@ -408,33 +403,41 @@ def render_play_tab(settings: Settings) -> None:
                         for update in mem_updates[:2]:
                             _add_system_log(f"[记录] {update}" if output_lang == "zh" else f"[LOG] {update}", output_lang)
                 st.rerun()
-        
-        # --- 显示对话历史 ---
-        for msg in st.session_state["play_messages"]:
-            if msg["role"] == "user":
-                with st.chat_message("user"):
-                    st.write(msg["content"])
-            else:
-                with st.chat_message("assistant"):
-                    st.markdown(msg["content"])
-                    m = msg.get("meta") or {}
-                    if m.get("image_url"):
-                        try:
-                            st.image(m["image_url"], caption=t("play_image_caption"), use_container_width=True)
-                        except Exception:
-                            st.caption(f"Image URL: {m['image_url']}")
-                    if m.get("image_prompt_zh") or m.get("image_prompt_en"):
-                        with st.expander(t("play_image_prompt")):
-                            st.text(m.get("image_prompt_zh") or "")
-                            st.text(m.get("image_prompt_en") or "")
-                    if m.get("interaction_hint") and guidance_level != "weak":
-                        hint = m["interaction_hint"]
-                        if guidance_level == "strong":
-                            st.info(t("play_hint", hint=hint))
-                        else:
-                            st.caption(t("play_hint", hint=hint))
 
-        # --- 输入框 ---
+        with _fixed_scroll_panel(_PLAY_PANEL_HEIGHT):
+            # --- 显示对话历史 ---
+            for msg in st.session_state["play_messages"]:
+                if msg["role"] == "user":
+                    with st.chat_message("user"):
+                        st.write(msg["content"])
+                else:
+                    with st.chat_message("assistant"):
+                        st.markdown(msg["content"])
+                        m = msg.get("meta") or {}
+                        if m.get("image_url"):
+                            try:
+                                st.image(m["image_url"], caption=t("play_image_caption"), use_container_width=True)
+                            except Exception:
+                                st.caption(f"Image URL: {m['image_url']}")
+                        if m.get("image_prompt_zh") or m.get("image_prompt_en"):
+                            with st.expander(t("play_image_prompt")):
+                                st.text(m.get("image_prompt_zh") or "")
+                                st.text(m.get("image_prompt_en") or "")
+                        if m.get("interaction_hint") and guidance_level != "weak":
+                            hint = m["interaction_hint"]
+                            if guidance_level == "strong":
+                                st.info(t("play_hint", hint=hint))
+                            else:
+                                st.caption(t("play_hint", hint=hint))
+
+            with st.expander(t("play_save_details")):
+                sp = session_path(paths, session_name)
+                st.caption(f"{t('play_save_name')}: {session_name}")
+                st.caption(f"{t('play_save_path')}: {sp}")
+                if sp.exists():
+                    st.json(load_play_session(sp))
+
+        # --- 输入框（固定在主栏底部，不随对话历史滚动） ---
         if prompt := st.chat_input(t("play_input_hint")):
             if not settings.llm_api_key:
                 st.error(t("play_need_api"))
@@ -503,14 +506,21 @@ def render_play_tab(settings: Settings) -> None:
                         _add_system_log(f"{log_prefix} {update}", output_lang)
             st.rerun()
 
-        # --- 存档信息 ---
-        st.divider()
-        with st.expander(t("play_save_details")):
-            sp = session_path(paths, session_name)
-            st.caption(f"{t('play_save_name')}: {session_name}")
-            st.caption(f"{t('play_save_path')}: {sp}")
-            if sp.exists():
-                st.json(load_play_session(sp))
+    with status_col:
+        with _fixed_scroll_panel(_PLAY_PANEL_HEIGHT):
+            if theme:
+                render_themed_status_panel(
+                    theme=theme,
+                    char_status=st.session_state.get("_char_status"),
+                    character=character,
+                    output_lang=output_lang,
+                    system_logs=st.session_state.get("_system_logs"),
+                    goal_mode=goal_on,
+                )
+            else:
+                _render_character_status_panel(
+                    paths, session_name, character, settings, int(chapter)
+                )
 
 
 def _persist_scene_progress(

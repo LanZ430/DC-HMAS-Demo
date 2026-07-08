@@ -78,8 +78,42 @@ Left and right panels stay **fixed in the window** while you scroll the story.
 | Item | Detail |
 |------|--------|
 | Python | 3.10+ |
+| Streamlit | **≥ 1.29** (fixed side panels during play need `st.container(height=…)`) |
 | LLM | Qwen via DashScope (or compatible API) |
 | Disk | Preprocessed data stored under `./data/` |
+
+---
+
+## Switch LLM provider (no code changes)
+
+The demo uses any **OpenAI-compatible** chat API. Edit `.env` only, then restart `python start.py`:
+
+| Variable | Purpose |
+|----------|---------|
+| `LLM_API_KEY` or `DASHSCOPE_API_KEY` | API key |
+| `LLM_BASE_URL` | Provider base URL |
+| `LLM_MODEL` | Model name |
+
+**Examples:**
+
+```env
+# Qwen / DashScope (default)
+DASHSCOPE_API_KEY=your_key
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen-plus
+
+# OpenAI
+LLM_API_KEY=sk-...
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+
+# DeepSeek
+LLM_API_KEY=...
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+```
+
+No source-code edits are required to switch models.
 
 ---
 
@@ -122,8 +156,9 @@ dc-hmas-demo/
 2. 复制 `.env.example` 为 `.env`，填入百炼 API Key
 3. `python start.py`，浏览器打开 http://localhost:8501
 4. **预处理**页上传 `.txt` 小说 → 开始预处理
-5. **交互体验**页选角色 → 开场 → 底部输入框自由行动
-6. 开启 **目标模式** 可在左侧看到系统任务与当前关注
+5. **预处理**页上传 `.txt` 小说 → 开始预处理
+6. **交互体验**页选角色 → 开场 → 底部输入框自由行动
+7. 开启 **目标模式** 可在左侧看到系统任务与当前关注；左右侧栏固定，中间对话区滚动
 
 ---
 
